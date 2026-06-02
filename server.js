@@ -12,8 +12,8 @@ const frontendBuildPath = path.join(__dirname, 'frontend', 'dist');
 // JSON 형식의 요청 body를 req.body에서 사용할 수 있게 합니다.
 app.use(express.json());
 
-// 서버가 사용할 포트 번호를 3000번으로 지정합니다.
-const PORT = 3000;
+// Render 같은 배포 환경에서는 PORT 환경 변수를 사용하고, 로컬에서는 3000번을 사용합니다.
+const PORT = process.env.PORT || 3000;
 
 // 서버가 처음 시작할 때 사용할 자동차 목록 데이터입니다.
 let cars = [
@@ -27,17 +27,53 @@ app.get('/cars', (req, res) => {
   res.json(cars);
 });
 
-// company 쿼리와 일치하는 자동차 목록을 검색합니다.
-app.get('/cars/search', (req, res) => {
-  const { company } = req.query;
-
-  if (!company) {
-    return res.json(cars);
+function searchCars(keyword) {
+  if (!keyword) {
+    return cars;
   }
 
-  const searchedCars = cars.filter((item) => item.company === company);
+  const lowerKeyword = keyword.toLowerCase();
 
-  res.json(searchedCars);
+  return cars.filter((item) => {
+    return item.name.toLowerCase().includes(lowerKeyword)
+      || item.company.toLowerCase().includes(lowerKeyword);
+  });
+}
+
+function createCar(carData) {
+  const maxId = cars.reduce((max, item) => Math.max(max, item._id), 0);
+
+  return {
+    _id: maxId + 1,
+    name: carData.name,
+    price: Number(carData.price),
+    company: carData.company,
+    year: Number(carData.year),
+  };
+}
+
+function deleteCar(id) {
+  const carIndex = cars.findIndex((item) => item._id === id);
+
+  if (carIndex === -1) {
+    return null;
+  }
+
+  return cars.splice(carIndex, 1)[0];
+}
+
+// 이름 또는 제조사 쿼리와 일치하는 자동차 목록을 검색합니다.
+app.get('/cars/search', (req, res) => {
+  const keyword = req.query.q || req.query.company || '';
+
+  res.json(searchCars(keyword));
+});
+
+// React 개발 서버와 통합 실행 환경에서 모두 /api/cars/search로 검색할 수 있게 합니다.
+app.get('/api/cars/search', (req, res) => {
+  const keyword = req.query.q || req.query.company || '';
+
+  res.json(searchCars(keyword));
 });
 
 // 가격 범위에 해당하는 자동차 목록을 필터링합니다.
@@ -80,7 +116,15 @@ app.get('/cars/:id', (req, res) => {
 
 // 요청 body로 받은 자동차 정보를 목록에 새로 추가합니다.
 app.post('/cars', (req, res) => {
-  const newCar = req.body;
+  const newCar = createCar(req.body);
+  cars.push(newCar);
+
+  res.status(201).json(newCar);
+});
+
+// React 앱에서도 같은 추가 기능을 사용할 수 있게 합니다.
+app.post('/api/cars', (req, res) => {
+  const newCar = createCar(req.body);
   cars.push(newCar);
 
   res.status(201).json(newCar);
@@ -104,13 +148,23 @@ app.put('/cars/:id', (req, res) => {
 // URL의 id와 일치하는 자동차를 목록에서 삭제합니다.
 app.delete('/cars/:id', (req, res) => {
   const id = Number(req.params.id);
-  const carIndex = cars.findIndex((item) => item._id === id);
+  const deletedCar = deleteCar(id);
 
-  if (carIndex === -1) {
+  if (!deletedCar) {
     return res.status(404).json({ message: 'Car not found' });
   }
 
-  const deletedCar = cars.splice(carIndex, 1)[0];
+  res.json(deletedCar);
+});
+
+// React 앱에서도 같은 삭제 기능을 사용할 수 있게 합니다.
+app.delete('/api/cars/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const deletedCar = deleteCar(id);
+
+  if (!deletedCar) {
+    return res.status(404).json({ message: 'Car not found' });
+  }
 
   res.json(deletedCar);
 });
@@ -123,7 +177,7 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(frontendBuildPath, 'index.html'));
 });
 
-// 3000번 포트에서 서버를 실행하고, 실행되면 콘솔에 주소를 출력합니다.
+// 설정된 포트에서 서버를 실행하고, 실행되면 콘솔에 주소를 출력합니다.
 app.listen(PORT, () => {
   console.log(`Server is running at http://localhost:${PORT}`);
 });
